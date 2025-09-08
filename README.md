@@ -1,6 +1,7 @@
-# ScreenTime2Notion
-
 Sync your Screen Time data from Mac and iOS devices to Notion automatically.
+
+![Chart Example](images/chart.png)
+![Data Example](images/data.png)
 
 ## Quick Setup
 
@@ -8,24 +9,13 @@ Sync your Screen Time data from Mac and iOS devices to Notion automatically.
 # 1. Configure Notion
 python -m src.main configure
 
+![Database ID Location](images/url.png)
+
 # 2. Set up automatic daily sync at 9 PM
 ./setup_cron.sh
 
 # 3. First manual sync to test
 python -m src.main sync --setup-schema --days 7
-```
-
-## iOS Device Setup
-
-Enable Screen Time sync for iPhone/iPad data:
-
-1. **iOS**: Settings → Screen Time → Share Across Devices (ON)
-2. **Mac**: System Settings → Screen Time → Share Across Devices (ON)
-3. **Wait**: 6-24 hours for initial sync
-
-Check if iOS data is syncing:
-```bash
-python -m src.main check-ios
 ```
 
 ## Commands
@@ -61,9 +51,9 @@ python -m src.main check-ios
 ## Troubleshooting
 
 **No iOS data?**
-1. Toggle Screen Time "Share Across Devices" OFF then ON
-2. Wait 24 hours
-3. Run `python -m src.main check-ios`
+1. **iOS**: Settings → Screen Time → Share Across Devices (OFF → wait 30sec → ON)
+2. **Mac**: System Settings → Screen Time → Share Across Devices (OFF → wait 30sec → ON)
+3. Wait 24 hours, then run `python -m src.main check-ios`
 
 **Cron job not working?**
 ```bash
