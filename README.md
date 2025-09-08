@@ -107,11 +107,7 @@ The Notion database includes these properties:
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/screentime2notion.git
+git clone https://github.com/icarus/screentime2notion.git
 cd screentime2notion
 pip install -e .
 ```
-
-## License
-
-MIT
