@@ -1,5 +1,3 @@
-# ScreenTime2Notion
-
 macOS saves Screen Time data for all your iCloud enabled devices inside a local SQLite file stored at `~/Library/Application Support/Knowledge/knowledgeC.db`. This tool reads that data and syncs it to a Notion database with custom categories and weekly aggregation.
 
 Note: Only works on macOS. iOS data sync may be inconsistent depending on your iCloud settings.
