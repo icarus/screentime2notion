@@ -1,113 +1,98 @@
-macOS saves Screen Time data for all your iCloud enabled devices inside a local SQLite file stored at `~/Library/Application Support/Knowledge/knowledgeC.db`. This tool reads that data and syncs it to a Notion database with custom categories and weekly aggregation.
+# ScreenTime2Notion
 
-Note: Only works on macOS. iOS data sync may be inconsistent depending on your iCloud settings.
+Sync your Screen Time data from Mac and iOS devices to Notion automatically.
 
-## Quick Start
+## Quick Setup
 
 ```bash
-# Install
-pip install screentime2notion
+# 1. Configure Notion
+python -m src.main configure
 
-# Configure Notion credentials
-screentime2notion configure
+# 2. Set up automatic daily sync at 9 PM
+./setup_cron.sh
 
-# First sync with database setup
-screentime2notion sync --setup-schema --days 7
+# 3. First manual sync to test
+python -m src.main sync --setup-schema --days 7
 ```
 
-## Features
+## iOS Device Setup
 
-- Reads Screen Time data directly from knowledgeC.db
-- Weekly aggregation (one row per app per week)
-- Custom app categorization via JSON config
-- Protects manual entries in Notion
-- Sleep session detection
-- Multi-device support (when iOS data syncs)
-- CSV export functionality
+Enable Screen Time sync for iPhone/iPad data:
 
-## Setup
+1. **iOS**: Settings → Screen Time → Share Across Devices (ON)
+2. **Mac**: System Settings → Screen Time → Share Across Devices (ON)
+3. **Wait**: 6-24 hours for initial sync
 
-### 1. macOS Permissions
-1. System Preferences > Security & Privacy > Privacy
-2. Select "Full Disk Access"
-3. Add Terminal app
-4. Restart Terminal
-
-### 2. Notion Setup
-1. Create integration at [notion.so/my-integrations](https://www.notion.so/my-integrations)
-2. Create a new database in Notion
-3. Share database with your integration
-4. Copy API key and database ID
-
-![How to get the database ID](images/url.png)
-
-### 3. Configure
+Check if iOS data is syncing:
 ```bash
-screentime2notion configure
+python -m src.main check-ios
 ```
 
-Or create `.env` file:
-```bash
-NOTION_API_KEY=your_api_key_here
-NOTION_DATABASE_ID=your_database_id_here
-```
-
-## Usage
+## Commands
 
 ```bash
-# Basic sync (last 7 days)
-screentime2notion sync
+# Sync to Notion
+python -m src.main sync --days 7
+
+# Check sync status
+tail -f sync.log
 
 # Export to CSV
-screentime2notion export --output usage.csv
+python -m src.main export --output usage.csv
 
-# Show available devices
-screentime2notion devices
+# Show devices
+python -m src.main devices
 
-# List apps by category
-screentime2notion apps
+# Categorize apps
+python -m src.main categorize "Instagram" "Procrastinate"
 
-# Add custom category mapping
-screentime2notion categorize "App Name" "Work"
+# Debug iOS sync
+python -m src.main check-ios
 ```
 
-## Configuration
+## What You Get
 
-Categories are defined in `config/categories.json`:
+- **Multi-device tracking**: Mac, iPhone, iPad usage in one place
+- **Web usage**: Safari URLs from iOS devices
+- **Auto-categorization**: Work, Learn, Socialize, etc.
+- **Weekly aggregation**: Clean data in Notion
+- **Automatic sync**: Set it and forget it
 
-```json
-{
-  "categories": {
-    "Work": {
-      "color": "blue",
-      "apps": ["Visual Studio Code", "Terminal", "Notion"],
-      "bundle_patterns": ["com.microsoft.*", "com.apple.dt.Xcode"]
-    }
-  }
-}
+## Troubleshooting
+
+**No iOS data?**
+1. Toggle Screen Time "Share Across Devices" OFF then ON
+2. Wait 24 hours
+3. Run `python -m src.main check-ios`
+
+**Cron job not working?**
+```bash
+# Check if cron job exists
+crontab -l
+
+# View sync logs
+tail -f sync.log
+```
+
+**Notion errors?**
+```bash
+# Test connection
+python -m src.main info
 ```
 
 ## Data Schema
 
-The Notion database includes these properties:
+Your Notion database will have:
+- **App Name**: Instagram, Safari, etc.
+- **Device**: 📱 iPhone 15 Pro Max, 💻 Mac
+- **Category**: Work, Learn, Procrastinate
+- **URL**: Website URLs (for Safari)
+- **Hours/Sessions**: Usage metrics
+- **Date**: Week starting Monday
 
-| Property | Type | Description |
-|----------|------|-------------|
-| App Name | Title | Application display name |
-| App ID | Text | Bundle identifier |
-| Date | Date | Week start date (Monday) |
-| Category | Select | Custom category |
-| Device | Text | Device name |
-| Hours | Number | Usage hours for the week |
-| Sessions | Number | Number of sessions |
+## Permissions
 
-![Example 1](images/chart.png)
-![Example 2](images/data.png)
-
-## Development
-
-```bash
-git clone https://github.com/icarus/screentime2notion.git
-cd screentime2notion
-pip install -e .
-```
+Grant "Full Disk Access" to Terminal:
+1. System Settings → Privacy & Security → Full Disk Access
+2. Add Terminal app
+3. Restart Terminal

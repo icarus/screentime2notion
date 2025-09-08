@@ -774,6 +774,144 @@ def demo_ios(days):
         traceback.print_exc()
 
 @cli.command()
+def check_ios():
+    """Check iOS Screen Time sync status and provide troubleshooting info."""
+    
+    click.echo("🔍 iOS Screen Time Sync Diagnostic")
+    click.echo("=" * 50)
+    
+    try:
+        import sqlite3
+        
+        reader = ScreenTimeReader()
+        db_path = reader.db_path
+        
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            # Check for iOS devices in ZSYNCPEER
+            cursor = conn.execute('''
+                SELECT ZMODEL, ZDEVICEID, 
+                       datetime(ZLASTSEENDATE + 978307200, 'unixepoch') as last_seen
+                FROM ZSYNCPEER 
+                WHERE ZMODEL IS NOT NULL
+                ORDER BY ZMODEL
+            ''')
+            
+            devices = cursor.fetchall()
+            
+            if not devices:
+                click.echo("❌ No iOS devices found in sync database")
+                click.echo("💡 Make sure 'Share Across Devices' is enabled in Screen Time settings")
+                return
+            
+            click.echo("📱 iOS Devices Registered for Sync:")
+            click.echo("-" * 40)
+            ios_devices = []
+            for model, device_id, last_seen in devices:
+                if 'iPhone' in model or 'iPad' in model:
+                    ios_devices.append((model, device_id, last_seen))
+                    click.echo(f"  📱 {model:<20} (Last seen: {last_seen})")
+                else:
+                    click.echo(f"  💻 {model:<20} (Last seen: {last_seen})")
+            
+            if not ios_devices:
+                click.echo("❌ No iOS devices found, only Mac")
+                click.echo("💡 Enable 'Share Across Devices' in iOS Screen Time settings")
+                return
+            
+            # Check for actual iOS usage data
+            cursor = conn.execute('''
+                SELECT COUNT(*) 
+                FROM ZOBJECT 
+                LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
+                LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
+                WHERE ZOBJECT.ZSTREAMNAME = '/app/usage'
+                AND ZSOURCE.ZDEVICEID IS NOT NULL
+                AND ZSYNCPEER.ZMODEL IS NOT NULL
+                AND (ZSYNCPEER.ZMODEL LIKE 'iPhone%' OR ZSYNCPEER.ZMODEL LIKE 'iPad%')
+            ''')
+            
+            ios_usage_count = cursor.fetchone()[0]
+            
+            click.echo(f"\n📊 iOS Screen Time Usage Records: {ios_usage_count}")
+            
+            if ios_usage_count == 0:
+                click.echo("❌ No iOS Screen Time usage data found")
+                click.echo("\n🔧 Troubleshooting Steps:")
+                click.echo("1. On each iOS device: Settings → Screen Time → Share Across Devices (ON)")
+                click.echo("2. On Mac: System Settings → Screen Time → Share Across Devices (ON)")  
+                click.echo("3. If already ON, turn OFF → wait 30sec → turn ON")
+                click.echo("4. Wait 6-24 hours for initial sync")
+                click.echo("5. Restart all devices")
+                click.echo("\n📖 See TROUBLESHOOTING_iOS.md for detailed guide")
+            else:
+                click.echo("✅ iOS Screen Time data found!")
+                
+                # Show recent iOS usage
+                cursor = conn.execute('''
+                    SELECT 
+                        ZSYNCPEER.ZMODEL,
+                        COUNT(*) as sessions,
+                        SUM(ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) / 3600.0 as hours,
+                        datetime(MAX(ZOBJECT.ZSTARTDATE + 978307200), 'unixepoch') as latest
+                    FROM ZOBJECT 
+                    LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
+                    LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
+                    WHERE ZOBJECT.ZSTREAMNAME = '/app/usage'
+                    AND ZSOURCE.ZDEVICEID IS NOT NULL
+                    AND ZSYNCPEER.ZMODEL IS NOT NULL
+                    AND (ZSYNCPEER.ZMODEL LIKE 'iPhone%' OR ZSYNCPEER.ZMODEL LIKE 'iPad%')
+                    AND ZOBJECT.ZSTARTDATE >= strftime('%s', datetime('now', '-7 days')) - 978307200
+                    GROUP BY ZSYNCPEER.ZMODEL
+                    ORDER BY hours DESC
+                ''')
+                
+                recent_usage = cursor.fetchall()
+                if recent_usage:
+                    click.echo("\n📱 Recent iOS Usage (Last 7 days):")
+                    click.echo("-" * 50)
+                    for model, sessions, hours, latest in recent_usage:
+                        click.echo(f"  📱 {model:<20}: {hours:.1f}h ({sessions} sessions, latest: {latest})")
+                    
+                    click.echo(f"\n✅ iOS data is working! Run 'screentime2notion sync' to use it")
+                else:
+                    click.echo("⚠️  iOS data exists but none in recent 7 days")
+                    click.echo("💡 Historical data found - sync may be working but inactive recently")
+            
+            # Check what other data is syncing from iOS devices  
+            cursor = conn.execute('''
+                SELECT 
+                    ZOBJECT.ZSTREAMNAME,
+                    ZSYNCPEER.ZMODEL,
+                    COUNT(*) as records
+                FROM ZOBJECT 
+                LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
+                LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
+                WHERE ZSOURCE.ZDEVICEID IS NOT NULL
+                AND ZSYNCPEER.ZMODEL IS NOT NULL
+                AND (ZSYNCPEER.ZMODEL LIKE 'iPhone%' OR ZSYNCPEER.ZMODEL LIKE 'iPad%')
+                AND ZOBJECT.ZSTARTDATE >= strftime('%s', datetime('now', '-7 days')) - 978307200
+                GROUP BY ZOBJECT.ZSTREAMNAME, ZSYNCPEER.ZMODEL
+                HAVING records > 5
+                ORDER BY records DESC
+            ''')
+            
+            other_data = cursor.fetchall()
+            if other_data:
+                click.echo(f"\n📡 Other iOS Data Syncing (Last 7 days):")
+                click.echo("-" * 60)
+                for stream, model, count in other_data:
+                    click.echo(f"  {stream:<35} {model:<15} {count:>4} records")
+                
+                if ios_usage_count == 0:
+                    click.echo(f"\n💡 iOS devices ARE syncing other data, so the connection works!")
+                    click.echo(f"   Screen Time usage sync just needs to be enabled specifically.")
+    
+    except Exception as e:
+        click.echo(f"❌ Error checking iOS sync: {e}")
+        import traceback
+        traceback.print_exc()
+
+@cli.command()
 def clear_notion():
     """Clear all data from the Notion database."""
     
