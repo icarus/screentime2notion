@@ -1,0 +1,135 @@
+{
+  "categories": {
+    "Work": {
+      "color": "blue",
+      "apps": [
+        "Visual Studio Code",
+        "Figma",
+        "Photoshop",
+        "Fintual",
+        "Santander",
+        "Safari",
+        "Illustrator",
+        "GitHub Desktop",
+        "Sourcetree",
+        "Docker Desktop",
+        "Postman",
+        "TablePlus",
+        "Sequel Pro",
+        "Slack",
+        "Microsoft Teams",
+        "Cursor",
+        "Notion",
+        "Obsidian",
+        "Finder",
+        "Console",
+        "Calculator",
+        "TextEdit",
+        "Preview",
+        "ToWebP",
+        "Calendar",
+        "Reminders",
+        "Notes",
+        "Xcode",
+        "Terminal",
+        "ChatGPT",
+        "Claude",
+        "Spark Email",
+        "Mail",
+        "Arc"
+      ],
+      "bundle_patterns": [
+        "com.microsoft.VSCode",
+        "com.apple.dt.Xcode",
+        "com.github.*",
+        "com.docker.*",
+        "com.figma.*",
+        "com.adobe.*"
+      ]
+    },
+    "Learn": {
+      "color": "yellow",
+      "apps": [
+        "MadMapper",
+        "Zotero",
+        "Runway",
+        "Zoom",
+        "Maps",
+        "Outlook"
+      ],
+      "bundle_patterns": [
+        "*uai.cl*"
+      ]
+    },
+    "Socialize": {
+      "color": "green",
+      "apps": [],
+      "bundle_patterns": [
+        "com.apple.FaceTime"
+      ]
+    },
+    "Procrastinate": {
+      "color": "red",
+      "apps": [
+        "YouTube",
+        "WhatsApp",
+        "Disney+",
+        "MercadoLibre",
+        "Netflix",
+        "LinkedIn",
+        "Twitch",
+        "TikTok",
+        "Twitter",
+        "Facebook",
+        "Instagram",
+        "Reddit",
+        "Spotify",
+        "Apple Music",
+        "Podcasts",
+        "VLC media player",
+        "QuickTime Player"
+      ],
+      "bundle_patterns": [
+        "com.google.ios.youtube",
+        "com.netflix.*",
+        "tv.twitch.*",
+        "com.zhiliaoapp.musically",
+        "com.twitter.*",
+        "com.spotify.*",
+        "com.apple.music"
+      ]
+    },
+    "Exercise": {
+      "color": "purple",
+      "apps": [],
+      "bundle_patterns": []
+    },
+    "Family": {
+      "color": "pink",
+      "apps": [
+        "Messages",
+        "Photos",
+        "Family",
+        "Find My"
+      ],
+      "bundle_patterns": [
+        "com.apple.MobileSMS",
+        "com.apple.mobileslideshow"
+      ]
+    },
+    "Sleeping": {
+      "color": "gray",
+      "apps": [],
+      "bundle_patterns": []
+    }
+  },
+  "default_category": "Other",
+  "rules": {
+    "ignore_apps": [
+      "loginwindow",
+      "WindowServer",
+      "kernel_task"
+    ],
+    "minimum_duration_minutes": 1
+  }
+}
