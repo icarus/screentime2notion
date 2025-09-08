@@ -41,6 +41,8 @@ screentime2notion sync --setup-schema --days 7
 3. Share database with your integration
 4. Copy API key and database ID
 
+![How to get the database ID](images/url.png)
+
 ### 3. Configure
 ```bash
 screentime2notion configure
@@ -57,9 +59,6 @@ NOTION_DATABASE_ID=your_database_id_here
 ```bash
 # Basic sync (last 7 days)
 screentime2notion sync
-
-# Sync specific date range
-screentime2notion sync --days 30
 
 # Export to CSV
 screentime2notion export --output usage.csv
@@ -103,6 +102,9 @@ The Notion database includes these properties:
 | Device | Text | Device name |
 | Hours | Number | Usage hours for the week |
 | Sessions | Number | Number of sessions |
+
+![Example 1](images/chart.png)
+![Example 2](images/data.png)
 
 ## Development
 

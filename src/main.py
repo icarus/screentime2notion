@@ -62,7 +62,7 @@ def sync(days, batch_size, setup_schema, dry_run, mac_only):
         click.echo(f"📅 Processing data from {start_date.date()} to {end_date.date()}")
         
         # Read and process data (include all devices by default unless --mac-only is specified)
-        raw_data = reader.get_app_usage_data(start_date, end_date, include_all_devices=not mac_only)
+        raw_data = reader.get_combined_usage_data(start_date, end_date, include_all_devices=not mac_only)
         if raw_data.empty:
             click.echo("⚠️ No Screen Time data found for the specified date range")
             return
@@ -701,6 +701,77 @@ def devices():
         
     except Exception as e:
         click.echo(f"❌ Error: {e}")
+
+@cli.command()
+@click.option('--days', '-d', default=3, help='Number of days to generate iOS demo data for')
+def demo_ios(days):
+    """Demo iOS Screen Time data functionality with generated test data."""
+    
+    click.echo("📱 iOS Screen Time Demo")
+    click.echo("=" * 50)
+    
+    try:
+        # Generate test data with iOS devices
+        click.echo(f"🎲 Generating demo data with iOS devices for {days} days...")
+        generator = TestDataGenerator()
+        raw_data = generator.generate_realistic_usage_data(days)
+        
+        if raw_data.empty:
+            click.echo("❌ No demo data generated")
+            return
+        
+        # Show device breakdown
+        device_summary = raw_data.groupby('device_name').agg({
+            'duration_minutes': 'sum',
+            'app_name': 'count'
+        }).reset_index()
+        device_summary['duration_hours'] = device_summary['duration_minutes'] / 60
+        device_summary = device_summary.sort_values('duration_hours', ascending=False)
+        
+        click.echo(f"\n📊 Usage by Device:")
+        click.echo("-" * 40)
+        for _, row in device_summary.iterrows():
+            click.echo(f"  {row['device_name']:<20}: {row['duration_hours']:.1f}h ({row['app_name']} sessions)")
+        
+        # Show iOS-specific apps
+        ios_data = raw_data[raw_data['device_name'].str.contains('📱')].copy()
+        if not ios_data.empty:
+            click.echo(f"\n📱 iOS Apps Found ({len(ios_data)} sessions):")
+            click.echo("-" * 50)
+            ios_apps = ios_data.groupby('app_display_name').agg({
+                'duration_minutes': 'sum'
+            }).reset_index()
+            ios_apps['duration_hours'] = ios_apps['duration_minutes'] / 60
+            ios_apps = ios_apps.sort_values('duration_hours', ascending=False)
+            
+            for _, row in ios_apps.head(10).iterrows():
+                click.echo(f"  📱 {row['app_display_name']:<25}: {row['duration_hours']:.1f}h")
+        
+        # Show web usage data
+        web_data = raw_data[raw_data['url'].notna()]
+        if not web_data.empty:
+            click.echo(f"\n🌐 Web Usage Found ({len(web_data)} sessions with URLs):")
+            click.echo("-" * 60)
+            for _, row in web_data.head(5).iterrows():
+                click.echo(f"  🌐 {row['app_display_name']} → {row['url']} ({row['duration_minutes']:.1f} min)")
+        
+        click.echo(f"\n💡 This demonstrates the iOS functionality that will work when:")
+        click.echo(f"   • Screen Time is enabled on your iOS devices")
+        click.echo(f"   • iCloud sync for Screen Time is turned on")
+        click.echo(f"   • Your devices are signed into the same Apple ID")
+        click.echo(f"   • Family Sharing for Screen Time is configured (if needed)")
+        
+        click.echo(f"\n🔗 To enable iOS data sync:")
+        click.echo(f"   1. iOS: Settings → Screen Time → Share Across Devices (ON)")
+        click.echo(f"   2. Mac: System Settings → Screen Time → Options → Share Across Devices (ON)")
+        click.echo(f"   3. Wait for devices to sync (can take several hours)")
+        
+        click.echo(f"\n✅ Your Python implementation is ready for iOS data!")
+        
+    except Exception as e:
+        click.echo(f"❌ Demo error: {e}")
+        import traceback
+        traceback.print_exc()
 
 @cli.command()
 def clear_notion():

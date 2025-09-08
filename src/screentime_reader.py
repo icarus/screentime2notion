@@ -62,9 +62,11 @@ class ScreenTimeReader:
                 (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) as duration_seconds,
                 ZOBJECT.ZCREATIONDATE as creation_date,
                 ZOBJECT.ZSTREAMNAME as stream_name,
-                ZOBJECT.ZSECONDSFROMGMT as timezone_offset,
+                ZOBJECT.ZSECONDSFROMGMT/3600 as gmt_offset,
                 COALESCE(ZSYNCPEER.ZMODEL, 'Mac') as device_model,
-                COALESCE(ZSYNCPEER.ZDEVICEID, 'local') as device_id
+                COALESCE(ZSYNCPEER.ZDEVICEID, 'local') as device_id,
+                ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
+                ZOBJECT.ZENDDATE + 978307200 as usage_end_time
             FROM ZOBJECT
             LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
             LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
@@ -83,9 +85,11 @@ class ScreenTimeReader:
                 (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) as duration_seconds,
                 ZOBJECT.ZCREATIONDATE as creation_date,
                 ZOBJECT.ZSTREAMNAME as stream_name,
-                ZOBJECT.ZSECONDSFROMGMT as timezone_offset,
+                ZOBJECT.ZSECONDSFROMGMT/3600 as gmt_offset,
                 'Mac' as device_model,
-                'local' as device_id
+                'local' as device_id,
+                ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
+                ZOBJECT.ZENDDATE + 978307200 as usage_end_time
             FROM ZOBJECT
             WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/usage'
             AND ZOBJECT.ZVALUESTRING IS NOT NULL
@@ -124,7 +128,108 @@ class ScreenTimeReader:
         df['app_display_name'] = df['app_name'].apply(self._clean_app_name)
         df['device_name'] = df['device_model'].apply(self._format_device_name)
 
-        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id']]
+        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id', 'gmt_offset']]
+
+    def get_web_usage_data(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, include_all_devices: bool = True) -> pd.DataFrame:
+        """Get web usage data from all devices with URL information."""
+        
+        if include_all_devices:
+            query = """
+            SELECT
+                ZOBJECT.ZVALUESTRING as app_name,
+                ZOBJECT.ZSTARTDATE as start_timestamp,
+                ZOBJECT.ZENDDATE as end_timestamp,
+                (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) as duration_seconds,
+                ZOBJECT.ZCREATIONDATE as creation_date,
+                ZOBJECT.ZSTREAMNAME as stream_name,
+                ZOBJECT.ZSECONDSFROMGMT/3600 as gmt_offset,
+                COALESCE(ZSYNCPEER.ZMODEL, 'Mac') as device_model,
+                COALESCE(ZSYNCPEER.ZDEVICEID, 'local') as device_id,
+                ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
+                ZOBJECT.ZENDDATE + 978307200 as usage_end_time,
+                ZSTRUCTUREDMETADATA.Z_DKDIGITALHEALTHMETADATAKEY__WEBPAGEURL as url
+            FROM ZOBJECT
+            LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
+            LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
+            LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
+            WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/webUsage'
+            AND ZOBJECT.ZVALUESTRING IS NOT NULL
+            AND ZOBJECT.ZVALUESTRING != ''
+            AND (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) > 15
+            """
+        else:
+            query = """
+            SELECT
+                ZOBJECT.ZVALUESTRING as app_name,
+                ZOBJECT.ZSTARTDATE as start_timestamp,
+                ZOBJECT.ZENDDATE as end_timestamp,
+                (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) as duration_seconds,
+                ZOBJECT.ZCREATIONDATE as creation_date,
+                ZOBJECT.ZSTREAMNAME as stream_name,
+                ZOBJECT.ZSECONDSFROMGMT/3600 as gmt_offset,
+                'Mac' as device_model,
+                'local' as device_id,
+                ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
+                ZOBJECT.ZENDDATE + 978307200 as usage_end_time,
+                ZSTRUCTUREDMETADATA.Z_DKDIGITALHEALTHMETADATAKEY__WEBPAGEURL as url
+            FROM ZOBJECT
+            LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
+            WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/webUsage'
+            AND ZOBJECT.ZVALUESTRING IS NOT NULL
+            AND ZOBJECT.ZVALUESTRING != ''
+            """
+
+        params = []
+        if start_date:
+            mac_start = (start_date.timestamp() - 978307200)
+            query += " AND ZOBJECT.ZSTARTDATE >= ?"
+            params.append(mac_start)
+
+        if end_date:
+            mac_end = (end_date.timestamp() - 978307200)
+            query += " AND ZOBJECT.ZENDDATE <= ?"
+            params.append(mac_end)
+
+        query += " ORDER BY ZOBJECT.ZSTARTDATE DESC"
+
+        with self._connect_to_db() as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+
+        if df.empty:
+            return pd.DataFrame()
+
+        # Convert Mac timestamps to datetime objects
+        df['start_time'] = df['start_timestamp'].apply(self._mac_timestamp_to_datetime)
+        df['end_time'] = df['end_timestamp'].apply(self._mac_timestamp_to_datetime)
+        df['creation_time'] = df['creation_date'].apply(self._mac_timestamp_to_datetime)
+
+        # Calculate duration in minutes
+        df['duration_minutes'] = df['duration_seconds'] / 60
+
+        # Clean up app names and add device info
+        df['app_display_name'] = df['app_name'].apply(self._clean_app_name)
+        df['device_name'] = df['device_model'].apply(self._format_device_name)
+
+        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id', 'gmt_offset', 'url']]
+
+    def get_combined_usage_data(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, include_all_devices: bool = True) -> pd.DataFrame:
+        """Get combined app and web usage data from all devices."""
+        
+        # Get app usage data
+        app_data = self.get_app_usage_data(start_date, end_date, include_all_devices)
+        web_data = self.get_web_usage_data(start_date, end_date, include_all_devices)
+        
+        if app_data.empty and web_data.empty:
+            return pd.DataFrame()
+        
+        # Add url column to app_data if it doesn't exist
+        if not app_data.empty and 'url' not in app_data.columns:
+            app_data['url'] = None
+        
+        # Combine the data
+        combined_data = pd.concat([app_data, web_data], ignore_index=True)
+        
+        return combined_data.sort_values('start_time', ascending=False)
 
     def _mac_timestamp_to_datetime(self, mac_timestamp: float) -> datetime:
         if pd.isna(mac_timestamp):
@@ -183,14 +288,87 @@ class ScreenTimeReader:
             return '💻 Mac'
         
         device_map = {
+            # iMac models
             'iMac14,1': '🖥️ iMac',
-            'iPad8,11': '📱 iPad Pro',
-            'iPhone12,8': '📱 iPhone 12 mini',
-            'iPhone13,3': '📱 iPhone 14 Pro',
-            'iPhone16,2': '📱 iPhone 16 Pro',
+            'iMac14,2': '🖥️ iMac',
+            'iMac21,1': '🖥️ iMac 24"',
+            'iMac21,2': '🖥️ iMac 24"',
+            
+            # MacBook models
+            'MacBookAir10,1': '💻 MacBook Air',
+            'MacBookPro18,1': '💻 MacBook Pro',
+            'MacBookPro18,2': '💻 MacBook Pro',
+            'MacBookPro18,3': '💻 MacBook Pro',
+            'MacBookPro18,4': '💻 MacBook Pro',
+            
+            # iPad models
+            'iPad8,11': '📱 iPad Pro 12.9"',
+            'iPad8,12': '📱 iPad Pro 12.9"',
+            'iPad13,4': '📱 iPad Pro 11"',
+            'iPad13,5': '📱 iPad Pro 11"',
+            'iPad13,8': '📱 iPad Pro 12.9"',
+            'iPad13,9': '📱 iPad Pro 12.9"',
+            'iPad14,3': '📱 iPad Pro 11"',
+            'iPad14,4': '📱 iPad Pro 11"',
+            'iPad11,3': '📱 iPad Air',
+            'iPad11,4': '📱 iPad Air',
+            'iPad13,1': '📱 iPad Air',
+            'iPad13,2': '📱 iPad Air',
+            'iPad7,5': '📱 iPad',
+            'iPad7,6': '📱 iPad',
+            
+            # iPhone models
+            'iPhone12,1': '📱 iPhone 11',
+            'iPhone12,3': '📱 iPhone 11 Pro',
+            'iPhone12,5': '📱 iPhone 11 Pro Max',
+            'iPhone12,8': '📱 iPhone SE',
+            'iPhone13,1': '📱 iPhone 12 mini',
+            'iPhone13,2': '📱 iPhone 12',
+            'iPhone13,3': '📱 iPhone 12 Pro',
+            'iPhone13,4': '📱 iPhone 12 Pro Max',
+            'iPhone14,2': '📱 iPhone 13 Pro',
+            'iPhone14,3': '📱 iPhone 13 Pro Max',
+            'iPhone14,4': '📱 iPhone 13 mini',
+            'iPhone14,5': '📱 iPhone 13',
+            'iPhone14,6': '📱 iPhone SE',
+            'iPhone14,7': '📱 iPhone 14',
+            'iPhone14,8': '📱 iPhone 14 Plus',
+            'iPhone15,2': '📱 iPhone 14 Pro',
+            'iPhone15,3': '📱 iPhone 14 Pro Max',
+            'iPhone15,4': '📱 iPhone 15',
+            'iPhone15,5': '📱 iPhone 15 Plus',
+            'iPhone16,1': '📱 iPhone 15 Pro',
+            'iPhone16,2': '📱 iPhone 15 Pro Max',
+            
+            # Apple Watch
+            'Watch5,1': '⌚ Apple Watch',
+            'Watch5,2': '⌚ Apple Watch',
+            'Watch6,1': '⌚ Apple Watch',
+            'Watch6,2': '⌚ Apple Watch',
+            'Watch7,1': '⌚ Apple Watch',
+            
+            # Apple TV
+            'AppleTV11,1': '📺 Apple TV',
+            'AppleTV14,1': '📺 Apple TV 4K',
         }
         
-        return device_map.get(device_model, f'📱 {device_model}')
+        # Check for exact match first
+        if device_model in device_map:
+            return device_map[device_model]
+        
+        # Pattern-based matching for unknown models
+        if device_model.startswith('iPhone'):
+            return f'📱 {device_model}'
+        elif device_model.startswith('iPad'):
+            return f'📱 {device_model}'
+        elif device_model.startswith('iMac') or device_model.startswith('MacBook'):
+            return f'💻 {device_model}'
+        elif device_model.startswith('Watch'):
+            return f'⌚ {device_model}'
+        elif device_model.startswith('AppleTV'):
+            return f'📺 {device_model}'
+        
+        return f'📱 {device_model}'
 
     def get_available_devices(self) -> List[Dict]:
         """Get all available devices in the Screen Time database."""

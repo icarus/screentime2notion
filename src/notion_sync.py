@@ -57,6 +57,9 @@ class NotionSyncer:
 
             if "Domain" not in current_properties:
                 new_properties["Domain"] = {"rich_text": {}}
+            
+            if "URL" not in current_properties:
+                new_properties["URL"] = {"rich_text": {}}
 
             if "Last Updated" not in current_properties:
                 new_properties["Last Updated"] = {"date": {}}
@@ -341,6 +344,12 @@ class NotionSyncer:
         if domain:
             properties["Domain"] = {
                 "rich_text": [{"text": {"content": domain}}]
+            }
+        
+        # Add URL if it exists (for web usage data)
+        if 'url' in row and row['url'] and not pd.isna(row['url']):
+            properties["URL"] = {
+                "rich_text": [{"text": {"content": str(row['url'])}}]
             }
 
         # Add category if available
