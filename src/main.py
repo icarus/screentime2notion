@@ -787,7 +787,7 @@ def check_ios():
         db_path = reader.db_path
         
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
-            # Check for iOS devices in ZSYNCPEER
+            # Check for iOS devices in ZSYNCPEER (filtered to current devices only)
             cursor = conn.execute('''
                 SELECT ZMODEL, ZDEVICEID, 
                        datetime(ZLASTSEENDATE + 978307200, 'unixepoch') as last_seen
@@ -937,6 +937,143 @@ def clear_notion():
             
     except Exception as e:
         click.echo(f"❌ Error: {e}")
+
+@cli.command()
+@click.option('--days', '-d', default=3, help='Number of days to analyze (default: 3)')
+@click.option('--show-sessions', is_flag=True, help='Show individual sessions instead of summary')
+def debug_devices(days, show_sessions):
+    """Debug all devices without filtering to see multi-device data."""
+    
+    click.echo("🔍 Multi-Device Debug Mode (No Filtering)")
+    click.echo("=" * 60)
+    
+    try:
+        import sqlite3
+        
+        reader = ScreenTimeReader()
+        db_path = reader.db_path
+        
+        # First, let's see all devices in the sync peer table
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            click.echo("📱 All Registered Sync Devices:")
+            click.echo("-" * 50)
+            
+            cursor = conn.execute('''
+                SELECT ZMODEL, ZDEVICEID, 
+                       datetime(ZLASTSEENDATE + 978307200, 'unixepoch') as last_seen,
+                       COUNT(*) OVER (PARTITION BY ZMODEL) as model_count
+                FROM ZSYNCPEER 
+                WHERE ZMODEL IS NOT NULL
+                ORDER BY ZLASTSEENDATE DESC
+            ''')
+            
+            devices = cursor.fetchall()
+            for model, device_id, last_seen, count in devices:
+                device_icon = "📱" if "iPhone" in model or "iPad" in model else "💻"
+                click.echo(f"  {device_icon} {model:<20} (Last seen: {last_seen}) [{device_id[:8]}...]")
+            
+            # Now let's query app usage data without any device filtering
+            click.echo(f"\n📊 App Usage Data by Device (Last {days} days):")
+            click.echo("-" * 70)
+            
+            # APOLLO-style query but without device filtering
+            cursor = conn.execute('''
+                SELECT
+                    ZOBJECT.ZVALUESTRING as app_name,
+                    ZOBJECT.ZSTARTDATE as start_timestamp,
+                    ZOBJECT.ZENDDATE as end_timestamp,
+                    (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) / 60.0 as duration_minutes,
+                    CASE 
+                        WHEN ZSYNCPEER.ZMODEL IS NOT NULL THEN ZSYNCPEER.ZMODEL
+                        WHEN ZSOURCE.ZDEVICEID IS NULL OR ZSOURCE.ZDEVICEID = '' THEN 'Mac'
+                        ELSE 'Unknown'
+                    END as device_model,
+                    COALESCE(ZSOURCE.ZDEVICEID, 'local') as device_id,
+                    datetime(ZOBJECT.ZSTARTDATE + 978307200, 'unixepoch') as start_time
+                FROM ZOBJECT
+                LEFT JOIN ZSTRUCTUREDMETADATA ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
+                LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
+                LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
+                WHERE ZOBJECT.ZSTREAMNAME = '/app/usage'
+                AND ZOBJECT.ZVALUESTRING IS NOT NULL
+                AND ZOBJECT.ZVALUESTRING != ''
+                AND (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) > 15
+                AND ZOBJECT.ZSTARTDATE >= strftime('%s', datetime('now', '-{} days')) - 978307200
+                ORDER BY ZOBJECT.ZSTARTDATE DESC
+            '''.format(days))
+            
+            usage_data = cursor.fetchall()
+            
+            if not usage_data:
+                click.echo("❌ No app usage data found")
+                return
+            
+            # Group by device for summary
+            device_summary = {}
+            session_details = []
+            
+            for row in usage_data:
+                app_name, start_ts, end_ts, duration_min, device_model, device_id, start_time = row
+                
+                if device_model not in device_summary:
+                    device_summary[device_model] = {
+                        'sessions': 0,
+                        'total_minutes': 0,
+                        'apps': set(),
+                        'device_id': device_id,
+                        'latest_session': start_time
+                    }
+                
+                device_summary[device_model]['sessions'] += 1
+                device_summary[device_model]['total_minutes'] += duration_min
+                device_summary[device_model]['apps'].add(app_name)
+                
+                session_details.append({
+                    'device': device_model,
+                    'app': app_name,
+                    'duration': duration_min,
+                    'start_time': start_time
+                })
+            
+            # Show device summary
+            click.echo("📈 Usage Summary by Device:")
+            click.echo("-" * 40)
+            for device, stats in sorted(device_summary.items(), key=lambda x: x[1]['total_minutes'], reverse=True):
+                device_icon = "📱" if "iPhone" in device or "iPad" in device else "💻"
+                hours = stats['total_minutes'] / 60
+                click.echo(f"  {device_icon} {device:<20}: {hours:.1f}h ({stats['sessions']} sessions, {len(stats['apps'])} apps)")
+                click.echo(f"      Device ID: {stats['device_id'][:12]}... | Latest: {stats['latest_session']}")
+            
+            # Show recent sessions if requested
+            if show_sessions:
+                click.echo(f"\n🔍 Recent Sessions (Last 20):")
+                click.echo("-" * 80)
+                for session in session_details[:20]:
+                    device_icon = "📱" if "iPhone" in session['device'] or "iPad" in session['device'] else "💻"
+                    click.echo(f"  {device_icon} {session['device']:<15} | {session['app']:<25} | {session['duration']:.1f}min | {session['start_time']}")
+            
+            total_devices = len(device_summary)
+            total_sessions = sum(stats['sessions'] for stats in device_summary.values())
+            total_hours = sum(stats['total_minutes'] for stats in device_summary.values()) / 60
+            
+            click.echo(f"\n📋 Overall Summary:")
+            click.echo(f"  • Total devices with data: {total_devices}")
+            click.echo(f"  • Total sessions: {total_sessions}")
+            click.echo(f"  • Total usage: {total_hours:.1f} hours")
+            
+            # Show which devices are currently being filtered out
+            filtered_devices = [d for d in device_summary.keys() if d != 'Mac' and d != 'iPhone16,2']
+            if filtered_devices:
+                click.echo(f"\n⚠️  Devices currently filtered out by your app:")
+                for device in filtered_devices:
+                    device_icon = "📱" if "iPhone" in device or "iPad" in device else "💻"
+                    click.echo(f"  {device_icon} {device}")
+                click.echo(f"  💡 Only 'Mac' and 'iPhone16,2' (iPhone 15 Pro Max) are included in normal sync")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     cli()

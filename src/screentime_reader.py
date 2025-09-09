@@ -63,15 +63,21 @@ class ScreenTimeReader:
                 ZOBJECT.ZCREATIONDATE as creation_date,
                 ZOBJECT.ZSTREAMNAME as stream_name,
                 ZOBJECT.ZSECONDSFROMGMT/3600 as gmt_offset,
-                COALESCE(ZSYNCPEER.ZMODEL, 'Mac') as device_model,
-                COALESCE(ZSYNCPEER.ZDEVICEID, 'local') as device_id,
+                CASE 
+                    WHEN ZSYNCPEER.ZMODEL IS NOT NULL THEN ZSYNCPEER.ZMODEL
+                    WHEN ZSOURCE.ZDEVICEID IS NULL OR ZSOURCE.ZDEVICEID = '' THEN 'Mac'
+                    ELSE 'Mac'
+                END as device_model,
+                COALESCE(ZSOURCE.ZDEVICEID, 'local') as device_id,
                 ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
-                ZOBJECT.ZENDDATE + 978307200 as usage_end_time
+                ZOBJECT.ZENDDATE + 978307200 as usage_end_time,
+                ZOBJECT.ZUUID as session_uuid,
+                ZSTRUCTUREDMETADATA.ZMETADATAHASH as metadata_hash
             FROM ZOBJECT
-            LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
+            LEFT JOIN ZSTRUCTUREDMETADATA ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
             LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
             LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
-            WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/usage'
+            WHERE ZOBJECT.ZSTREAMNAME = '/app/usage'
             AND ZOBJECT.ZVALUESTRING IS NOT NULL
             AND ZOBJECT.ZVALUESTRING != ''
             AND (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) > 15
@@ -89,11 +95,16 @@ class ScreenTimeReader:
                 'Mac' as device_model,
                 'local' as device_id,
                 ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
-                ZOBJECT.ZENDDATE + 978307200 as usage_end_time
+                ZOBJECT.ZENDDATE + 978307200 as usage_end_time,
+                ZOBJECT.ZUUID as session_uuid,
+                NULL as metadata_hash
             FROM ZOBJECT
-            WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/usage'
+            LEFT JOIN ZSTRUCTUREDMETADATA ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
+            WHERE ZOBJECT.ZSTREAMNAME = '/app/usage'
             AND ZOBJECT.ZVALUESTRING IS NOT NULL
             AND ZOBJECT.ZVALUESTRING != ''
+            AND (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) > 15
+            AND ZOBJECT.ZSOURCE IS NULL
             """
 
         params = []
@@ -128,7 +139,7 @@ class ScreenTimeReader:
         df['app_display_name'] = df['app_name'].apply(self._clean_app_name)
         df['device_name'] = df['device_model'].apply(self._format_device_name)
 
-        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id', 'gmt_offset']]
+        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id', 'gmt_offset', 'session_uuid', 'metadata_hash']]
 
     def get_web_usage_data(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, include_all_devices: bool = True) -> pd.DataFrame:
         """Get web usage data from all devices with URL information."""
@@ -143,16 +154,22 @@ class ScreenTimeReader:
                 ZOBJECT.ZCREATIONDATE as creation_date,
                 ZOBJECT.ZSTREAMNAME as stream_name,
                 ZOBJECT.ZSECONDSFROMGMT/3600 as gmt_offset,
-                COALESCE(ZSYNCPEER.ZMODEL, 'Mac') as device_model,
-                COALESCE(ZSYNCPEER.ZDEVICEID, 'local') as device_id,
+                CASE 
+                    WHEN ZSYNCPEER.ZMODEL IS NOT NULL THEN ZSYNCPEER.ZMODEL
+                    WHEN ZSOURCE.ZDEVICEID IS NULL OR ZSOURCE.ZDEVICEID = '' THEN 'Mac'
+                    ELSE 'Mac'
+                END as device_model,
+                COALESCE(ZSOURCE.ZDEVICEID, 'local') as device_id,
                 ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
                 ZOBJECT.ZENDDATE + 978307200 as usage_end_time,
+                ZOBJECT.ZUUID as session_uuid,
+                ZSTRUCTUREDMETADATA.ZMETADATAHASH as metadata_hash,
                 ZSTRUCTUREDMETADATA.Z_DKDIGITALHEALTHMETADATAKEY__WEBPAGEURL as url
             FROM ZOBJECT
-            LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
+            LEFT JOIN ZSTRUCTUREDMETADATA ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
             LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
             LEFT JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
-            WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/webUsage'
+            WHERE ZOBJECT.ZSTREAMNAME = '/app/webUsage'
             AND ZOBJECT.ZVALUESTRING IS NOT NULL
             AND ZOBJECT.ZVALUESTRING != ''
             AND (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) > 15
@@ -171,12 +188,16 @@ class ScreenTimeReader:
                 'local' as device_id,
                 ZOBJECT.ZSTARTDATE + 978307200 as usage_start_time,
                 ZOBJECT.ZENDDATE + 978307200 as usage_end_time,
+                ZOBJECT.ZUUID as session_uuid,
+                NULL as metadata_hash,
                 ZSTRUCTUREDMETADATA.Z_DKDIGITALHEALTHMETADATAKEY__WEBPAGEURL as url
             FROM ZOBJECT
-            LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
-            WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/webUsage'
+            LEFT JOIN ZSTRUCTUREDMETADATA ON ZOBJECT.ZSTRUCTUREDMETADATA = ZSTRUCTUREDMETADATA.Z_PK
+            WHERE ZOBJECT.ZSTREAMNAME = '/app/webUsage'
             AND ZOBJECT.ZVALUESTRING IS NOT NULL
             AND ZOBJECT.ZVALUESTRING != ''
+            AND (ZOBJECT.ZENDDATE - ZOBJECT.ZSTARTDATE) > 15
+            AND ZOBJECT.ZSOURCE IS NULL
             """
 
         params = []
@@ -210,7 +231,7 @@ class ScreenTimeReader:
         df['app_display_name'] = df['app_name'].apply(self._clean_app_name)
         df['device_name'] = df['device_model'].apply(self._format_device_name)
 
-        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id', 'gmt_offset', 'url']]
+        return df[['app_name', 'app_display_name', 'start_time', 'end_time', 'duration_minutes', 'creation_time', 'device_model', 'device_name', 'device_id', 'gmt_offset', 'session_uuid', 'metadata_hash', 'url']]
 
     def get_combined_usage_data(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, include_all_devices: bool = True) -> pd.DataFrame:
         """Get combined app and web usage data from all devices."""
@@ -222,9 +243,12 @@ class ScreenTimeReader:
         if app_data.empty and web_data.empty:
             return pd.DataFrame()
         
-        # Add url column to app_data if it doesn't exist
+        # Ensure both datasets have the same columns
         if not app_data.empty and 'url' not in app_data.columns:
             app_data['url'] = None
+        if not web_data.empty and 'session_uuid' not in web_data.columns:
+            web_data['session_uuid'] = None
+            web_data['metadata_hash'] = None
         
         # Combine the data
         combined_data = pd.concat([app_data, web_data], ignore_index=True)
@@ -376,11 +400,13 @@ class ScreenTimeReader:
 
     def get_available_devices(self) -> List[Dict]:
         """Get all available devices in the Screen Time database."""
+        # First get devices with actual usage data, filtered to only show current devices
         query = """
         SELECT DISTINCT
             ZSYNCPEER.ZMODEL as device_model,
             ZSYNCPEER.ZDEVICEID as device_id,
-            COUNT(*) as usage_count
+            COUNT(*) as usage_count,
+            MAX(ZOBJECT.ZSTARTDATE + 978307200) as last_used
         FROM ZOBJECT
         LEFT JOIN ZSTRUCTUREDMETADATA ON ZSTRUCTUREDMETADATA.Z_PK = ZOBJECT.ZSTRUCTUREDMETADATA
         LEFT JOIN ZSOURCE ON ZOBJECT.ZSOURCE = ZSOURCE.Z_PK
@@ -401,17 +427,43 @@ class ScreenTimeReader:
                     'model': device_model,
                     'id': row['device_id'],
                     'name': self._format_device_name(device_model),
-                    'usage_count': row['usage_count']
+                    'usage_count': row['usage_count'],
+                    'last_used': datetime.fromtimestamp(row['last_used']) if row['last_used'] else None
                 })
         
-        # Add Mac (local device) if not already present
-        mac_found = any(d['model'] in ['Mac', 'iMac14,1'] for d in devices)
-        if not mac_found:
+        # Also check for Mac/local data that might not have a ZSYNCPEER entry
+        local_query = """
+        SELECT COUNT(*) as usage_count,
+               MAX(ZOBJECT.ZSTARTDATE + 978307200) as last_used
+        FROM ZOBJECT
+        WHERE ZOBJECT.ZSTREAMNAME LIKE '/app/usage'
+        AND ZOBJECT.ZVALUESTRING IS NOT NULL
+        AND (ZOBJECT.ZSOURCE IS NULL 
+             OR ZOBJECT.ZSOURCE NOT IN (
+                 SELECT ZSOURCE.Z_PK FROM ZSOURCE 
+                 JOIN ZSYNCPEER ON ZSOURCE.ZDEVICEID = ZSYNCPEER.ZDEVICEID
+                 WHERE ZSYNCPEER.ZMODEL IS NOT NULL
+             ))
+        """
+        
+        cursor = conn.execute(local_query)
+        local_row = cursor.fetchone()
+        
+        if local_row and local_row['usage_count'] > 0:
             devices.insert(0, {
                 'model': 'Mac',
                 'id': 'local',
                 'name': '💻 Mac',
-                'usage_count': 0
+                'usage_count': local_row['usage_count'],
+                'last_used': datetime.fromtimestamp(local_row['last_used']) if local_row['last_used'] else None
+            })
+        elif not devices:  # No devices found at all
+            devices.insert(0, {
+                'model': 'Mac',
+                'id': 'local',
+                'name': '💻 Mac',
+                'usage_count': 0,
+                'last_used': None
             })
         
         return devices
