@@ -274,6 +274,7 @@ class ScreenTimeReader:
             'com.todesktop.230313mzl4w4u92': 'Cursor',  # Common ToDesktop app
             'notion.id': 'Notion',
             'com.adobe.Photoshop': 'Photoshop',
+            'com.tinyspeck.slackmacgap': 'Slack',
             'com.adobe.illustrator': 'Illustrator',
             'com.spotify.client': 'Spotify',
             'com.readdle.smartemail-Mac': 'Spark Email',
