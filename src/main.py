@@ -14,7 +14,6 @@ from .data_processor import DataProcessor
 from .category_mapper import CategoryMapper
 from .notion_sync import NotionSyncer
 from .test_data_generator import TestDataGenerator
-from .sleep_detector import SleepDetector
 
 # Load environment variables
 load_dotenv()
@@ -69,6 +68,14 @@ def sync(days, batch_size, setup_schema, dry_run, mac_only):
         
         click.echo(f"📊 Found {len(raw_data)} raw usage sessions")
         
+        # Show device breakdown
+        if 'device_model' in raw_data.columns:
+            device_summary = raw_data.groupby('device_model').size().sort_values(ascending=False)
+            click.echo("📱 Device breakdown:")
+            for device, count in device_summary.items():
+                device_icon = "📱" if device != "Mac" else "💻"
+                click.echo(f"   {device_icon} {device}: {count} sessions")
+        
         # Process sessions
         processed_data = processor.process_usage_sessions(raw_data)
         click.echo(f"🔄 Processed into {len(processed_data)} sessions")
@@ -77,25 +84,14 @@ def sync(days, batch_size, setup_schema, dry_run, mac_only):
         categorized_data = mapper.categorize_dataframe(processed_data)
         click.echo(f"🏷️ Categorized {len(categorized_data)} sessions")
         
-        # Detect sleep sessions
-        sleep_detector = SleepDetector(reader.db_path)
-        sleep_data = sleep_detector.get_sleep_sessions(start_date, end_date)
+        # Aggregate daily usage (one row per app per day)
+        daily_usage = processor.aggregate_daily_usage(categorized_data)
         
-        if not sleep_data.empty:
-            click.echo(f"😴 Found {len(sleep_data)} sleep sessions")
-            # Combine app usage data with sleep data
-            categorized_data = pd.concat([categorized_data, sleep_data], ignore_index=True)
-        else:
-            click.echo("😴 No sleep sessions detected")
-        
-        # Aggregate weekly usage (one row per app per week)
-        weekly_usage = processor.aggregate_weekly_usage(categorized_data)
-        
-        if weekly_usage.empty:
+        if daily_usage.empty:
             click.echo("⚠️ No data to sync after processing")
             return
         
-        click.echo(f"📈 Prepared {len(weekly_usage)} weekly usage records")
+        click.echo(f"📈 Prepared {len(daily_usage)} daily usage records")
         
         # Display summary
         summary = processor.get_usage_summary(categorized_data)
@@ -104,6 +100,14 @@ def sync(days, batch_size, setup_schema, dry_run, mac_only):
         click.echo(f"  • Total sessions: {summary['total_sessions']}")
         click.echo(f"  • Total usage: {summary['total_hours']} hours")
         click.echo(f"  • Average daily: {summary['avg_daily_usage']} hours")
+        
+        # Show device summary in final output
+        if 'device_model' in categorized_data.columns:
+            device_hours = categorized_data.groupby('device_model')['duration_minutes'].sum() / 60
+            click.echo(f"  • Devices: {len(device_hours)} device(s)")
+            for device, hours in device_hours.sort_values(ascending=False).items():
+                device_icon = "📱" if device != "Mac" else "💻"
+                click.echo(f"    {device_icon} {device}: {hours:.1f}h")
         
         # Show top categories
         category_summary = mapper.get_category_summary(categorized_data)
@@ -127,7 +131,7 @@ def sync(days, batch_size, setup_schema, dry_run, mac_only):
         
         # Sync data
         click.echo("🚀 Syncing to Notion...")
-        results = syncer.sync_usage_data(weekly_usage, batch_size)
+        results = syncer.sync_usage_data(daily_usage, batch_size)
         
         click.echo(f"\n✅ Sync completed:")
         click.echo(f"  • Synced: {results['synced']} records")
@@ -175,10 +179,10 @@ def export(output, days, category_summary):
             summary_data.to_csv(output, index=False)
             click.echo(f"📊 Category summary exported to {output}")
         else:
-            # Export detailed weekly usage
-            weekly_usage = processor.aggregate_weekly_usage(categorized_data)
-            weekly_usage.to_csv(output, index=False)
-            click.echo(f"📈 Weekly usage data exported to {output}")
+            # Export detailed daily usage
+            daily_usage = processor.aggregate_daily_usage(categorized_data)
+            daily_usage.to_csv(output, index=False)
+            click.echo(f"📈 Daily usage data exported to {output}")
         
         click.echo(f"✅ Export completed: {output}")
         

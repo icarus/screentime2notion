@@ -8,7 +8,8 @@ import time
 
 class NotionSyncer:
     def __init__(self, api_key: str, database_id: str):
-        self.client = Client(auth=api_key)
+        # Use the 2022-06-28 API version for compatibility
+        self.client = Client(auth=api_key, notion_version="2022-06-28")
         self.database_id = database_id
         self._verify_connection()
 
